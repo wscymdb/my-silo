@@ -1,0 +1,21 @@
+services:
+  my-silo:
+    image: ${APP_NAME:-my-silo}:${IMAGE_TAG:-latest}
+    container_name: ${APP_NAME:-my-silo}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: always
+    ports:
+      - "${APP_PORT:-8989}:8989"
+    environment:
+      - TZ=Asia/Shanghai
+      - SILO_PORT=8989
+      - SILO_DATA_DIR=/data
+      - SILO_ADMIN_USER=${SILO_ADMIN_USER:-admin}
+      - SILO_ADMIN_PASSWORD=${SILO_ADMIN_PASSWORD:-admin123}
+      - SILO_API_KEY=${SILO_API_KEY:-}
+      - SILO_MAX_SIZE_MB=${SILO_MAX_SIZE_MB:-500}
+    volumes:
+      - ../data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
