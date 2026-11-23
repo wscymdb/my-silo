@@ -58,7 +58,7 @@ export default function HomePage() {
     const params = new URLSearchParams(searchParams);
     if (folderId) params.set('folder', folderId);
     else params.delete('folder');
-    setSearchParams(params);
+    setSearchParams(params, { replace: true });
     setSelectedItemId(null);
     setSearchQuery('');
     setTooltip(null);
@@ -132,6 +132,14 @@ export default function HomePage() {
       }
       const data = await res.json();
       if (controller.signal.aborted) return;
+      if (res.status === 404 && folderId) {
+        setItems([]);
+        setBreadcrumbs([]);
+        setCurrentFolderId('');
+        showToast('目录不存在或已删除，已返回全部文件');
+        return;
+      }
+      if (!res.ok) throw new Error(data.error || '获取文件列表失败');
       setItems(data.items || []);
       setBreadcrumbs(data.breadcrumbs || []);
     } catch {

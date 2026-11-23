@@ -32,6 +32,18 @@ func (h *ItemsHandler) ListItems(c *gin.Context) {
 	if parentID == "root" || parentID == "" {
 		parentID = ""
 	}
+	if parentID != "" {
+		var isDir bool
+		err := h.db.QueryRow("SELECT is_dir FROM items WHERE id = ?", parentID).Scan(&isDir)
+		if err == sql.ErrNoRows || (err == nil && !isDir) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "目录不存在或已删除"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取目录失败"})
+			return
+		}
+	}
 
 	// 1. 查询当前文件夹下的所有文件和文件夹（文件夹排在前面，按名称排序）
 	var rows *sql.Rows
