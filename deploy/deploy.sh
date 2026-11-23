@@ -146,16 +146,6 @@ if [ -n "$SERVER_HOST" ]; then
   SERVER_DIR=$(resolve_server_dir "$SERVER_DIR" "$REMOTE_HOME")
   REMOTE_DIR_ARG=$(quote_remote_arg "$SERVER_DIR")
 
-  # An older script may have expanded ~ on the local machine. Do not silently
-  # point an existing container at a different, empty data directory.
-  APP_NAME_ARG=$(quote_remote_arg "$APP_NAME")
-  CURRENT_DATA_DIR=$(ssh $SSH_COMMON_OPTS "$SERVER_USER@$SERVER_HOST" "if command -v docker >/dev/null 2>&1; then docker inspect --format '{{range .Mounts}}{{if eq .Destination \"/data\"}}{{.Source}}{{end}}{{end}}' $APP_NAME_ARG 2>/dev/null || true; fi")
-  if [ -n "$CURRENT_DATA_DIR" ] && [ "$CURRENT_DATA_DIR" != "$SERVER_DIR/data" ]; then
-    echo "❌ 现有容器数据目录: $CURRENT_DATA_DIR" >&2
-    echo "   本次配置的数据目录: $SERVER_DIR/data" >&2
-    echo "   部署已停止。请将 SERVER_DIR 指向原部署目录，或迁移数据后再部署。" >&2
-    exit 1
-  fi
   ssh $SSH_COMMON_OPTS "$SERVER_USER@$SERVER_HOST" "mkdir -p -- $REMOTE_DIR_ARG"
 
   echo "🔍 检测远程服务器 CPU 架构..."
