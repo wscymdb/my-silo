@@ -92,6 +92,12 @@ func (h *ServeHandler) serveFileContent(c *gin.Context, forceDownload bool) {
 
 	// 3. 安全响应头设置
 	c.Header("X-Content-Type-Options", "nosniff")
+	textExtension := strings.ToLower(filepath.Ext(item.Name))
+	if textExtension == ".md" || textExtension == ".txt" {
+		// Text documents remain plain text on public links, even when their
+		// contents resemble HTML. Formatted Markdown is rendered in the app.
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+	}
 
 	// 对可能包含恶意脚本的富文本/矢量图设置沙箱隔离
 	if strings.Contains(item.MimeType, "svg") || strings.Contains(item.MimeType, "html") {
@@ -103,7 +109,11 @@ func (h *ServeHandler) serveFileContent(c *gin.Context, forceDownload bool) {
 		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", encodedFilename, encodedFilename))
 	} else {
 		// 预览模式：如果不是强制下载，支持浏览器缓存（1天）
-		c.Header("Cache-Control", "public, max-age=86400")
+		if textExtension == ".md" || textExtension == ".txt" {
+			c.Header("Cache-Control", "no-store")
+		} else {
+			c.Header("Cache-Control", "public, max-age=86400")
+		}
 		c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"; filename*=UTF-8''%s", encodedFilename, encodedFilename))
 	}
 

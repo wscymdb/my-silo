@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -16,8 +17,9 @@ import (
 )
 
 type ItemsHandler struct {
-	db  *sql.DB
-	cfg *config.Config
+	db        *sql.DB
+	cfg       *config.Config
+	contentMu sync.Mutex
 }
 
 func NewItemsHandler(db *sql.DB, cfg *config.Config) *ItemsHandler {
@@ -235,6 +237,8 @@ func (h *ItemsHandler) UploadFiles(c *gin.Context) {
 
 // UpdateItem 修改文件名或 IP 权限设置
 func (h *ItemsHandler) UpdateItem(c *gin.Context) {
+	h.contentMu.Lock()
+	defer h.contentMu.Unlock()
 	id := c.Param("id")
 
 	var req struct {
@@ -277,6 +281,8 @@ func (h *ItemsHandler) UpdateItem(c *gin.Context) {
 
 // DeleteItem 删除文件或文件夹（递归级联删除）
 func (h *ItemsHandler) DeleteItem(c *gin.Context) {
+	h.contentMu.Lock()
+	defer h.contentMu.Unlock()
 	id := c.Param("id")
 
 	// 递归收集该 ID 下的所有文件路径与子项目 ID
@@ -324,7 +330,7 @@ func (h *ItemsHandler) DeleteItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":      "删除成功",
+		"message":       "删除成功",
 		"deleted_count": len(toDeleteIDs),
 	})
 }

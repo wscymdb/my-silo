@@ -18,10 +18,12 @@ import {
   SlidersHorizontal,
   Settings as SettingsIcon,
   ExternalLink,
+  Pencil,
   X
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '../../providers/AppProvider';
+import ItemActions from './components/ItemActions';
 
 interface Breadcrumb {
   id: string;
@@ -57,8 +59,10 @@ export default function HomePage() {
   const [previewImage, setPreviewImage] = useState<Item | null>(null);
 
   // 文件名修改与超长 Tooltip 状态
+  const isTextFile = (item: Item) => !item.is_dir && /\.(md|txt)$/i.test(item.name);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renamingText, setRenamingText] = useState<string>('');
+  const renamingItemRef = useRef<string | null>(null);
   const [tooltip, setTooltip] = useState<{
     text: string;
     x: number;
@@ -258,11 +262,14 @@ export default function HomePage() {
   const handleStartRename = (item: Item, e: React.MouseEvent) => {
     e.stopPropagation();
     setTooltip(null);
+    renamingItemRef.current = item.id;
     setRenamingId(item.id);
     setRenamingText(item.name);
   };
 
   const handleSaveRename = async (id: string) => {
+    if (renamingItemRef.current !== id) return;
+    renamingItemRef.current = null;
     const trimmed = renamingText.trim();
     setRenamingId(null);
     if (!trimmed) return;
@@ -534,7 +541,7 @@ export default function HomePage() {
                       onDoubleClick={() => {
                         if (item.is_dir) setCurrentFolderId(item.id);
                       }}
-                      className={`cursor-pointer transition-colors ${
+                      className={`group cursor-pointer transition-colors ${
                         isSelected
                           ? 'bg-zinc-100/80'
                           : 'hover:bg-zinc-50/70'
@@ -574,6 +581,7 @@ export default function HomePage() {
                               if (e.key === 'Enter') {
                                 handleSaveRename(item.id);
                               } else if (e.key === 'Escape') {
+                                renamingItemRef.current = null;
                                 setRenamingId(null);
                               }
                             }}
@@ -581,14 +589,30 @@ export default function HomePage() {
                             className="h-7 w-64 rounded-md border border-zinc-950 bg-white px-2 text-xs font-medium text-zinc-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-zinc-950"
                           />
                         ) : (
-                          <span
-                            className="truncate max-w-[240px] sm:max-w-md select-text cursor-pointer hover:underline decoration-zinc-300 underline-offset-2"
-                            onDoubleClick={e => handleStartRename(item, e)}
-                            onMouseEnter={e => handleMouseEnterFileName(e, item.name)}
-                            onMouseLeave={handleMouseLeaveFileName}
-                          >
-                            {item.name}
-                          </span>
+                          <>
+                            {isTextFile(item) ? (
+                              <Link to={`/files/${item.id}`} onClick={e => e.stopPropagation()}
+                                className="truncate max-w-[240px] sm:max-w-md text-zinc-900 hover:underline underline-offset-2"
+                                onMouseEnter={e => handleMouseEnterFileName(e, item.name)} onMouseLeave={handleMouseLeaveFileName}>
+                                {item.name}
+                              </Link>
+                            ) : (
+                              <span className="truncate max-w-[240px] sm:max-w-md select-text cursor-pointer"
+                                onMouseEnter={e => handleMouseEnterFileName(e, item.name)} onMouseLeave={handleMouseLeaveFileName}>
+                                {item.name}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={e => handleStartRename(item, e)}
+                              onDoubleClick={e => e.stopPropagation()}
+                              title="重命名"
+                              aria-label={`重命名 ${item.name}`}
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-opacity hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-900 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          </>
                         )}
                       </td>
                       <td className="p-3 px-4 align-middle">
@@ -615,45 +639,20 @@ export default function HomePage() {
                         {item.is_dir ? '--' : formatSize(item.size_bytes)}
                       </td>
                       <td className="p-3 px-4 align-middle text-zinc-500 text-[11px]">
-                        {new Date(item.created_at).toLocaleDateString()}
+                        {new Date(item.updated_at || item.created_at).toLocaleString('zh-CN', {
+                          year: 'numeric', month: '2-digit', day: '2-digit',
+                          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+                        })}
                       </td>
                       <td className="p-3 px-4 align-middle text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {!item.is_dir && (
-                            <>
-                              <button
-                                onClick={e => copyLink(item.id, item.name, 'url', e)}
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-colors"
-                                title="复制直链"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                              <a
-                                href={`/d/${item.id}`}
-                                download
-                                onClick={e => e.stopPropagation()}
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-colors"
-                                title="下载"
-                              >
-                                <Download className="w-3.5 h-3.5" />
-                              </a>
-                            </>
-                          )}
-                          <button
-                            onClick={e => openIpModal(item, e)}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-colors"
-                            title="配置 IP 权限"
-                          >
-                            <SlidersHorizontal className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={e => handleDelete(item, e)}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                            title="删除"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        <ItemActions name={item.name} actions={[
+                          ...(!item.is_dir ? [
+                            { label: '复制直链', icon: Copy, onSelect: () => copyLink(item.id, item.name, 'url') },
+                            { label: '下载', icon: Download, href: `/d/${item.id}`, download: true },
+                          ] : []),
+                          { label: '配置 IP 权限', icon: SlidersHorizontal, onSelect: () => openIpModal(item) },
+                          { label: '删除', icon: Trash2, destructive: true, onSelect: () => handleDelete(item) },
+                        ]} />
                       </td>
                     </tr>
                   );
@@ -718,6 +717,7 @@ export default function HomePage() {
                           if (e.key === 'Enter') {
                             handleSaveRename(item.id);
                           } else if (e.key === 'Escape') {
+                            renamingItemRef.current = null;
                             setRenamingId(null);
                           }
                         }}
@@ -725,14 +725,30 @@ export default function HomePage() {
                         className="h-6 w-full rounded border border-zinc-950 bg-white px-1.5 text-center text-xs font-medium text-zinc-900 shadow-2xs focus:outline-none focus:ring-1 focus:ring-zinc-950"
                       />
                     ) : (
-                      <span
-                        className="text-xs font-medium text-zinc-900 block truncate w-full cursor-pointer hover:underline decoration-zinc-300 underline-offset-2 select-text"
-                        onDoubleClick={e => handleStartRename(item, e)}
-                        onMouseEnter={e => handleMouseEnterFileName(e, item.name)}
-                        onMouseLeave={handleMouseLeaveFileName}
-                      >
-                        {item.name}
-                      </span>
+                      <div className="flex min-w-0 items-center justify-center gap-1">
+                        {isTextFile(item) ? (
+                          <Link to={`/files/${item.id}`} onClick={e => e.stopPropagation()}
+                            className="min-w-0 truncate text-xs font-medium text-zinc-900 hover:underline underline-offset-2"
+                            onMouseEnter={e => handleMouseEnterFileName(e, item.name)} onMouseLeave={handleMouseLeaveFileName}>
+                            {item.name}
+                          </Link>
+                        ) : (
+                          <span className="text-xs font-medium text-zinc-900 truncate min-w-0 cursor-pointer select-text"
+                            onMouseEnter={e => handleMouseEnterFileName(e, item.name)} onMouseLeave={handleMouseLeaveFileName}>
+                            {item.name}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={e => handleStartRename(item, e)}
+                          onDoubleClick={e => e.stopPropagation()}
+                          title="重命名"
+                          aria-label={`重命名 ${item.name}`}
+                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-opacity hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-900 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     )}
                     <span className="text-[10px] text-zinc-400 font-mono block mt-0.5">
                       {item.is_dir ? 'DIR' : formatSize(item.size_bytes)}

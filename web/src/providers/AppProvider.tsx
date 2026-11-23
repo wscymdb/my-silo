@@ -26,7 +26,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     <AppContext.Provider value={{ token, setToken, showToast }}>
       {children}
       {message && (
-        <div role="status" className="fixed bottom-6 right-6 z-50 rounded-md border border-zinc-200 bg-white px-4 py-2.5 text-xs font-medium text-zinc-950 shadow-lg flex items-center gap-2 animate-in fade-in-0 slide-in-from-bottom-2">
+        <div role="status" className="fixed top-6 right-6 z-50 max-w-[calc(100vw-3rem)] rounded-md border border-zinc-200 bg-white px-4 py-2.5 text-xs font-medium text-zinc-950 shadow-lg flex items-center gap-2 animate-in fade-in-0 slide-in-from-top-2">
           <Check className="w-3.5 h-3.5 text-zinc-900" />
           <span>{message}</span>
         </div>

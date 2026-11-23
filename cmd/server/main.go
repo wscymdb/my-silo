@@ -110,6 +110,8 @@ func main() {
 			protected.POST("/items/upload", itemsHandler.UploadFiles)
 			protected.PATCH("/items/:id", itemsHandler.UpdateItem)
 			protected.DELETE("/items/:id", itemsHandler.DeleteItem)
+			protected.GET("/items/:id/content", itemsHandler.GetTextContent)
+			protected.PUT("/items/:id/content", itemsHandler.SaveTextContent)
 
 			// 公共系统配置
 			protected.GET("/settings", settingsHandler.GetSettings)
