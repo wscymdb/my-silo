@@ -3,7 +3,6 @@ import {
   Folder,
   File,
   ChevronRight,
-  ArrowLeft,
   Upload,
   FolderPlus,
   LayoutGrid,
@@ -408,21 +407,8 @@ export default function HomePage() {
 
       {/* 顶部通栏 Navbar (shadcn 规范高度 56px) */}
       <header className="h-14 border-b border-zinc-200/80 px-6 flex items-center justify-between gap-4 bg-white sticky top-0 z-20">
-        {/* 左侧：路径与返回导航（非根目录时，展示无框极简平滑箭头） */}
+        {/* 左侧：面包屑路径导航 */}
         <div className="flex items-center gap-1.5 min-w-0">
-          {breadcrumbs.length > 0 && (
-            <button
-              onClick={() => {
-                if (breadcrumbs.length === 1) setCurrentFolderId('');
-                else setCurrentFolderId(breadcrumbs[breadcrumbs.length - 2].id);
-              }}
-              className="p-1 text-zinc-400 hover:text-zinc-900 transition-colors flex items-center justify-center cursor-pointer"
-              title="返回上一级"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          )}
-
           {/* shadcn 风格 Breadcrumb 面包屑 */}
           <nav className="flex items-center text-xs font-medium text-zinc-500 overflow-hidden">
             <button
@@ -565,12 +551,12 @@ export default function HomePage() {
                       key={item.id}
                       onClick={e => {
                         e.stopPropagation();
-                        setSelectedItemId(item.id);
+                        setSelectedItemId(item.is_dir ? null : item.id);
                       }}
                       onDoubleClick={() => {
                         if (item.is_dir) setCurrentFolderId(item.id);
                       }}
-                      className={`group cursor-pointer transition-colors ${
+                      className={`group cursor-pointer transition-colors ${item.is_dir ? 'select-none' : ''} ${
                         isSelected
                           ? 'bg-zinc-100/80'
                           : 'hover:bg-zinc-50/70'
@@ -626,7 +612,7 @@ export default function HomePage() {
                                 {item.name}
                               </Link>
                             ) : (
-                              <span className="truncate max-w-[240px] sm:max-w-md select-text cursor-pointer"
+                              <span className={`truncate max-w-[240px] sm:max-w-md cursor-pointer ${item.is_dir ? 'select-none' : 'select-text'}`}
                                 onMouseEnter={e => handleMouseEnterFileName(e, item.name)} onMouseLeave={handleMouseLeaveFileName}>
                                 {item.name}
                               </span>
@@ -711,7 +697,7 @@ export default function HomePage() {
                   key={item.id}
                   onClick={e => {
                     e.stopPropagation();
-                    setSelectedItemId(item.id);
+                    setSelectedItemId(item.is_dir ? null : item.id);
                   }}
                   onDoubleClick={() => {
                     if (item.is_dir) setCurrentFolderId(item.id);
@@ -785,7 +771,7 @@ export default function HomePage() {
                             {item.name}
                           </Link>
                         ) : (
-                          <span className="text-xs font-medium text-zinc-900 truncate min-w-0 cursor-pointer select-text"
+                          <span className={`text-xs font-medium text-zinc-900 truncate min-w-0 cursor-pointer ${item.is_dir ? 'select-none' : 'select-text'}`}
                             onMouseEnter={e => handleMouseEnterFileName(e, item.name)} onMouseLeave={handleMouseLeaveFileName}>
                             {item.name}
                           </span>
