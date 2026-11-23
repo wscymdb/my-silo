@@ -2,14 +2,12 @@ package handler
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
 	"my-silo/internal/config"
 	"my-silo/internal/ipfilter"
 )
@@ -126,58 +124,6 @@ func (h *SettingsHandler) RegenerateAPIKey(c *gin.Context) {
 		"api_key": newKey,
 		"message": "API Key 已重置",
 	})
-}
-
-// ChangePassword 修改管理员密码
-func (h *SettingsHandler) ChangePassword(c *gin.Context) {
-	var req struct {
-		OldPassword string `json:"old_password" binding:"required"`
-		NewPassword string `json:"new_password" binding:"required"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数不完整"})
-		return
-	}
-
-	if len(req.NewPassword) < 6 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "新密码长度不能少于 6 位"})
-		return
-	}
-
-	// 校验当前密码
-	currentPassHash := h.getSetting("admin_password_hash")
-	valid := false
-	if currentPassHash != "" {
-		if err := bcrypt.CompareHashAndPassword([]byte(currentPassHash), []byte(req.OldPassword)); err == nil {
-			valid = true
-		}
-	} else {
-		// 校验环境变量中的初始密码
-		if subtle.ConstantTimeCompare([]byte(req.OldPassword), []byte(h.cfg.AdminPassword)) == 1 {
-			valid = true
-		}
-	}
-
-	if !valid {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "原密码不正确"})
-		return
-	}
-
-	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "加密密码失败"})
-		return
-	}
-
-	h.setSetting("admin_password_hash", string(newHash))
-	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功，新密码即刻生效"})
-}
-
-func (h *SettingsHandler) getSetting(key string) string {
-	var val string
-	h.db.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&val)
-	return val
 }
 
 func (h *SettingsHandler) setSetting(key, val string) {

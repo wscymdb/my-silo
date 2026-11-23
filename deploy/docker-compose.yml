@@ -18,4 +18,3 @@ services:
       - SILO_MAX_SIZE_MB=${SILO_MAX_SIZE_MB:-500}
     volumes:
       - ../data:/data
-      - /var/run/docker.sock:/var/run/docker.sock:ro

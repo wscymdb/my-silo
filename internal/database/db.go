@@ -53,12 +53,6 @@ func InitDB(dataDir string) (*sql.DB, error) {
 		value TEXT NOT NULL,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
-
-	CREATE TABLE IF NOT EXISTS port_notes (
-		port INTEGER PRIMARY KEY,
-		note TEXT NOT NULL DEFAULT '',
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("failed to create schema: %w", err)

@@ -24,7 +24,7 @@ func NewAuthHandler(db *sql.DB, cfg *config.Config) *AuthHandler {
 }
 
 type LoginRequest struct {
-	Username string `json:"username" binding:"required"`
+	Username string `json:"username"`
 	Password string `json:"password" binding:"required"`
 }
 
@@ -36,9 +36,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
-
-	// 检查用户名
-	userMatch := subtle.ConstantTimeCompare([]byte(req.Username), []byte(h.cfg.AdminUser)) == 1
 
 	// 检查密码：优先比对数据库中修改后的密码哈希，若无则比对环境变量初始密码
 	var storedPassHash string
@@ -53,17 +50,25 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		passMatch = subtle.ConstantTimeCompare([]byte(req.Password), []byte(h.cfg.AdminPassword)) == 1
 	}
 
-	if !userMatch || !passMatch {
+	if !passMatch {
 		middleware.RecordLoginFailure(clientIP)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
 		return
 	}
 
 	middleware.ResetLoginFailure(clientIP)
 
+	effectiveUser := h.cfg.AdminUser
+	if effectiveUser == "" {
+		effectiveUser = "admin"
+	}
+	if req.Username != "" && req.Username != "admin" {
+		effectiveUser = req.Username
+	}
+
 	// 签发 7 天有效期的 JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user": req.Username,
+		"user": effectiveUser,
 		"exp":  time.Now().Add(7 * 24 * time.Hour).Unix(),
 	})
 

@@ -6,6 +6,74 @@
 
 set -e
 
+# 按字面值读取配置，保留 ~，连接服务器后再按远程用户的 home 解析。
+load_deploy_env() {
+  local line key value quoted_pattern
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in ''|\#*) continue ;; esac
+    if [[ "$line" =~ ^export[[:space:]]+ ]]; then
+      line="${line#"${BASH_REMATCH[0]}"}"
+    fi
+    if [[ ! "$line" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*= ]]; then
+      echo "❌ .env 包含无效的配置行" >&2
+      return 1
+    fi
+    key="${BASH_REMATCH[1]}"
+    value="${line#*=}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    case "$value" in
+      \"*|\'*)
+        if [[ "$value" == \"* ]]; then
+          quoted_pattern='^"([^"]*)"[[:space:]]*(#.*)?$'
+        else
+          quoted_pattern="^'([^']*)'[[:space:]]*(#.*)?$"
+        fi
+        if [[ ! "$value" =~ $quoted_pattern ]]; then
+          echo "❌ .env 中 $key 的引号未正确闭合" >&2
+          return 1
+        fi
+        value="${BASH_REMATCH[1]}"
+        ;;
+      *)
+        value="${value%%[[:space:]]\#*}"
+        value="${value%"${value##*[![:space:]]}"}"
+        ;;
+    esac
+    export "$key=$value"
+  done < "$1"
+}
+
+# 转义远程路径，兼容空格和单引号。
+quote_remote_arg() {
+  local value="$1"
+  printf "'"
+  while [[ "$value" == *\'* ]]; do
+    printf '%s' "${value%%\'*}" "'\\''"
+    value="${value#*\'}"
+  done
+  printf "%s'" "$value"
+}
+
+resolve_server_dir() {
+  local requested="$1" remote_home="$2" resolved
+  case "$requested" in
+    '~') resolved="$remote_home" ;;
+    '~/'*) resolved="${remote_home%/}/${requested:2}" ;;
+    /*) resolved="$requested" ;;
+    *) echo '❌ SERVER_DIR 必须是绝对路径、~ 或 ~/ 开头的路径' >&2; return 1 ;;
+  esac
+  while [[ "$resolved" == */ && "$resolved" != / ]]; do resolved="${resolved%/}"; done
+  if [[ "$resolved" != /* || "$resolved" == / || "$resolved" == *$'\n'* || "$resolved" == *$'\r'* ]]; then
+    echo '❌ SERVER_DIR 不是有效的部署目录' >&2
+    return 1
+  fi
+  printf '%s\n' "$resolved"
+}
+
+
 # 获取脚本与项目根目录绝对路径 (兼容 sh 与 bash)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -28,9 +96,7 @@ echo "=================================================="
 
 # 1. 优先读取 deploy/.env 配置文件
 if [ -f "$SCRIPT_DIR/.env" ]; then
-  set -a
-  source "$SCRIPT_DIR/.env"
-  set +a
+  load_deploy_env "$SCRIPT_DIR/.env"
   echo "📄 已成功载入环境配置: deploy/.env"
 fi
 
@@ -76,7 +142,21 @@ if [ -n "$SERVER_HOST" ]; then
 
   echo ""
   echo "🔗 正在连接远程服务器 (只需验证 1 次密码)..."
-  ssh $SSH_COMMON_OPTS "$SERVER_USER@$SERVER_HOST" "mkdir -p $SERVER_DIR"
+  REMOTE_HOME=$(ssh $SSH_COMMON_OPTS "$SERVER_USER@$SERVER_HOST" 'printf "%s\n" "$HOME"')
+  SERVER_DIR=$(resolve_server_dir "$SERVER_DIR" "$REMOTE_HOME")
+  REMOTE_DIR_ARG=$(quote_remote_arg "$SERVER_DIR")
+
+  # An older script may have expanded ~ on the local machine. Do not silently
+  # point an existing container at a different, empty data directory.
+  APP_NAME_ARG=$(quote_remote_arg "$APP_NAME")
+  CURRENT_DATA_DIR=$(ssh $SSH_COMMON_OPTS "$SERVER_USER@$SERVER_HOST" "if command -v docker >/dev/null 2>&1; then docker inspect --format '{{range .Mounts}}{{if eq .Destination \"/data\"}}{{.Source}}{{end}}{{end}}' $APP_NAME_ARG 2>/dev/null || true; fi")
+  if [ -n "$CURRENT_DATA_DIR" ] && [ "$CURRENT_DATA_DIR" != "$SERVER_DIR/data" ]; then
+    echo "❌ 现有容器数据目录: $CURRENT_DATA_DIR" >&2
+    echo "   本次配置的数据目录: $SERVER_DIR/data" >&2
+    echo "   部署已停止。请将 SERVER_DIR 指向原部署目录，或迁移数据后再部署。" >&2
+    exit 1
+  fi
+  ssh $SSH_COMMON_OPTS "$SERVER_USER@$SERVER_HOST" "mkdir -p -- $REMOTE_DIR_ARG"
 
   echo "🔍 检测远程服务器 CPU 架构..."
   REMOTE_UNAME=$(ssh $SSH_COMMON_OPTS "$SERVER_USER@$SERVER_HOST" "uname -m" 2>/dev/null || echo "x86_64")
@@ -115,18 +195,18 @@ if [ -n "$SERVER_HOST" ]; then
   echo "--------------------------------------------------"
 
   echo "📤 [3/4] 正在通过 rsync 增量同步部署包至远端服务器..."
-  ssh $SSH_COMMON_OPTS "$SERVER_USER@$SERVER_HOST" "mkdir -p $SERVER_DIR"
+  ssh $SSH_COMMON_OPTS "$SERVER_USER@$SERVER_HOST" "mkdir -p -- $REMOTE_DIR_ARG"
 
   rsync -avz --delete \
     -e "ssh $SSH_COMMON_OPTS" \
     --exclude '.git' \
     --exclude 'data' \
     "$ROOT_DIR/deploy" \
-    "$SERVER_USER@$SERVER_HOST:$SERVER_DIR/"
+    "$SERVER_USER@$SERVER_HOST:$REMOTE_DIR_ARG/"
 
   echo ""
   echo "🐳 [4/4] 正在远程拉起 Docker 服务 (直接秒级启动)..."
-  ssh $SSH_COMMON_OPTS "$SERVER_USER@$SERVER_HOST" "cd $SERVER_DIR && docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build --remove-orphans"
+  ssh $SSH_COMMON_OPTS "$SERVER_USER@$SERVER_HOST" "cd $REMOTE_DIR_ARG && docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build --remove-orphans"
 
   TARGET_IP="$SERVER_HOST"
 else

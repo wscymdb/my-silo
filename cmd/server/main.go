@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 	mysilo "my-silo"
 	"my-silo/internal/config"
 	"my-silo/internal/database"
@@ -25,6 +26,33 @@ func main() {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
 	defer db.Close()
+
+	// 命令行辅助工具：忘记密码时一键重置
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "reset-password":
+			if len(os.Args) > 2 {
+				newPass := os.Args[2]
+				if len(newPass) < 6 {
+					log.Fatal("新密码长度不能少于 6 位")
+				}
+				hash, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+				if err != nil {
+					log.Fatalf("密码哈希生成失败: %v", err)
+				}
+				if _, err := db.Exec("INSERT INTO settings (key, value) VALUES ('admin_password_hash', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", string(hash)); err != nil {
+					log.Fatalf("密码重置失败: %v", err)
+				}
+				fmt.Println("✅ 密码已重置，新密码立即生效，无需重启服务")
+			} else {
+				if _, err := db.Exec("DELETE FROM settings WHERE key = 'admin_password_hash'"); err != nil {
+					log.Fatalf("恢复环境变量密码失败: %v", err)
+				}
+				fmt.Println("✅ 已清除数据库密码，登录将使用服务环境变量 SILO_ADMIN_PASSWORD")
+			}
+			return
+		}
+	}
 
 	// 持久化保存 JWT 密钥至数据库，避免每次重启服务重新生成随机密钥导致用户登录态失效 (401)
 	if os.Getenv("SILO_JWT_SECRET") == "" {
@@ -59,7 +87,6 @@ func main() {
 	itemsHandler := handler.NewItemsHandler(db, cfg)
 	serveHandler := handler.NewServeHandler(db, cfg)
 	settingsHandler := handler.NewSettingsHandler(db, cfg)
-	portsHandler := handler.NewPortsHandler(db)
 
 	// 1. 公开外链访问路由（直接访问与强制下载，内置 IP 校验）
 	r.GET("/f/:id", serveHandler.ServeView)
@@ -88,11 +115,6 @@ func main() {
 			protected.GET("/settings", settingsHandler.GetSettings)
 			protected.PATCH("/settings", settingsHandler.UpdateSettings)
 			protected.POST("/settings/apikey/regenerate", settingsHandler.RegenerateAPIKey)
-			protected.POST("/settings/password", settingsHandler.ChangePassword)
-
-			// 端口雷达与服务监控
-			protected.GET("/system/ports", portsHandler.GetPorts)
-			protected.PATCH("/system/ports/:port/note", portsHandler.UpdatePortNote)
 		}
 	}
 

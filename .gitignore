@@ -18,7 +18,7 @@ deploy/.env
 # ==========================================
 data/
 uploads/
-storage/
+/storage/
 *.db
 *.db-wal
 *.db-shm
@@ -58,6 +58,10 @@ Thumbs.db
 .idea/
 .vscode/
 *.sublime-workspace
+
+# AI 规则适配产物：只维护 ai/rules/ 中的规则源
+/.agents/rules/
+/AGENTS.md
 *.sublime-project
 
 # ==========================================
@@ -69,3 +73,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 *.sock
+
+# ==========================================
+# 7. 前端编译产物 (不污染 Git 历史)
+# ==========================================
+dist/
+web/dist/

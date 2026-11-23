@@ -20,6 +20,8 @@ type Config struct {
 }
 
 func Load() *Config {
+	loadEnvFile(".env", "deploy/.env", "../deploy/.env")
+
 	port := getEnv("SILO_PORT", "8989")
 	dataDir := getEnv("SILO_DATA_DIR", "./data")
 	adminUser := getEnv("SILO_ADMIN_USER", "admin")
@@ -69,4 +71,34 @@ func getEnv(key, defaultVal string) string {
 		return val
 	}
 	return defaultVal
+}
+
+func loadEnvFile(paths ...string) {
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				k := strings.TrimSpace(parts[0])
+				v := strings.TrimSpace(parts[1])
+				// 去除行内注释 (例如: val # 这是注释)
+				if idx := strings.Index(v, " #"); idx != -1 {
+					v = strings.TrimSpace(v[:idx])
+				} else if idx := strings.Index(v, "\t#"); idx != -1 {
+					v = strings.TrimSpace(v[:idx])
+				}
+				v = strings.Trim(v, `"'`)
+				if os.Getenv(k) == "" {
+					os.Setenv(k, v)
+				}
+			}
+		}
+	}
 }
