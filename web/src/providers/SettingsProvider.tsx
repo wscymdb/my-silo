@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useApp } from './AppProvider';
+import { writeClipboard } from '../lib/clipboard';
 
 interface SettingsData {
   custom_domain: string;
@@ -140,9 +141,13 @@ function useSettingsState() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    showToast(`已拷贝 ${label}`);
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await writeClipboard(text);
+      showToast(`已复制 ${label}`);
+    } catch {
+      showToast('复制失败，请手动复制');
+    }
   };
 
   const picGoConfigJson = JSON.stringify(

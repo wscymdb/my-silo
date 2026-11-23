@@ -21,9 +21,10 @@ import {
   Pencil,
   X
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../../providers/AppProvider';
 import ItemActions from './components/ItemActions';
+import { writeClipboard } from '../../lib/clipboard';
 
 interface Breadcrumb {
   id: string;
@@ -49,7 +50,21 @@ export default function HomePage() {
   const navigate = useNavigate();
 
   // 目录与导航状态
-  const [currentFolderId, setCurrentFolderId] = useState<string>('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentFolderId = searchParams.get('folder') || '';
+  const currentFolderRef = useRef(currentFolderId);
+  currentFolderRef.current = currentFolderId;
+  const itemsAbort = useRef<AbortController>();
+  const setCurrentFolderId = (folderId: string) => {
+    const params = new URLSearchParams(searchParams);
+    if (folderId) params.set('folder', folderId);
+    else params.delete('folder');
+    setSearchParams(params);
+    setSelectedItemId(null);
+    setSearchQuery('');
+    setTooltip(null);
+  };
+  const textFileUrl = (id: string) => `/files/${id}${currentFolderId ? `?${new URLSearchParams({ folder: currentFolderId })}` : ''}`;
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -98,12 +113,18 @@ export default function HomePage() {
     if (token) {
       fetchItems(currentFolderId);
     }
+    return () => itemsAbort.current?.abort();
   }, [token, currentFolderId]);
 
   const fetchItems = async (folderId: string) => {
+    if (folderId !== currentFolderRef.current) return;
+    itemsAbort.current?.abort();
+    const controller = new AbortController();
+    itemsAbort.current = controller;
     setLoading(true);
     try {
-      const res = await fetch(`/api/items?parent_id=${folderId}`, {
+      const res = await fetch(`/api/items?parent_id=${encodeURIComponent(folderId)}`, {
+        signal: controller.signal,
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 401) {
@@ -111,12 +132,13 @@ export default function HomePage() {
         return;
       }
       const data = await res.json();
+      if (controller.signal.aborted) return;
       setItems(data.items || []);
       setBreadcrumbs(data.breadcrumbs || []);
     } catch {
-      showToast('获取文件列表失败');
+      if (!controller.signal.aborted) showToast('获取文件列表失败');
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   };
 
@@ -298,25 +320,27 @@ export default function HomePage() {
     }
   };
 
+  const showTooltip = (target: HTMLElement, text: string) => {
+    const rect = target.getBoundingClientRect();
+    const isNearTop = rect.top < 45;
+    setTooltip({
+      text,
+      x: rect.left + Math.min(rect.width / 2, 140),
+      y: isNearTop ? rect.bottom + 8 : rect.top - 6,
+      placement: isNearTop ? 'bottom' : 'top',
+    });
+  };
+
   const handleMouseEnterFileName = (e: React.MouseEvent, text: string) => {
     const target = e.currentTarget as HTMLElement;
-    if (target.scrollWidth > target.clientWidth || text.length > 20) {
-      const rect = target.getBoundingClientRect();
-      const isNearTop = rect.top < 45;
-      setTooltip({
-        text,
-        x: rect.left + Math.min(rect.width / 2, 140),
-        y: isNearTop ? rect.bottom + 8 : rect.top - 6,
-        placement: isNearTop ? 'bottom' : 'top'
-      });
-    }
+    if (target.scrollWidth > target.clientWidth || text.length > 20) showTooltip(target, text);
   };
 
   const handleMouseLeaveFileName = () => {
     setTooltip(null);
   };
 
-  const copyLink = (id: string, name: string, type: 'url' | 'markdown' | 'download', e?: React.MouseEvent) => {
+  const copyLink = async (id: string, name: string, type: 'url' | 'markdown' | 'download', e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const origin = window.location.origin;
     let text = `${origin}/f/${id}`;
@@ -325,8 +349,13 @@ export default function HomePage() {
     } else if (type === 'download') {
       text = `${origin}/d/${id}`;
     }
-    navigator.clipboard.writeText(text);
-    showToast(`已拷贝 ${type === 'markdown' ? 'Markdown' : '链接'}`);
+    setTooltip(null);
+    try {
+      await writeClipboard(text);
+      showToast(type === 'markdown' ? 'Markdown 链接已复制' : '直链已复制');
+    } catch {
+      showToast('复制失败，请手动复制链接');
+    }
   };
 
   const formatSize = (bytes: number) => {
@@ -591,7 +620,7 @@ export default function HomePage() {
                         ) : (
                           <>
                             {isTextFile(item) ? (
-                              <Link to={`/files/${item.id}`} onClick={e => e.stopPropagation()}
+                              <Link to={textFileUrl(item.id)} onClick={e => e.stopPropagation()}
                                 className="truncate max-w-[240px] sm:max-w-md text-zinc-900 hover:underline underline-offset-2"
                                 onMouseEnter={e => handleMouseEnterFileName(e, item.name)} onMouseLeave={handleMouseLeaveFileName}>
                                 {item.name}
@@ -645,14 +674,26 @@ export default function HomePage() {
                         })}
                       </td>
                       <td className="p-3 px-4 align-middle text-right">
-                        <ItemActions name={item.name} actions={[
-                          ...(!item.is_dir ? [
-                            { label: '复制直链', icon: Copy, onSelect: () => copyLink(item.id, item.name, 'url') },
-                            { label: '下载', icon: Download, href: `/d/${item.id}`, download: true },
-                          ] : []),
-                          { label: '配置 IP 权限', icon: SlidersHorizontal, onSelect: () => openIpModal(item) },
-                          { label: '删除', icon: Trash2, destructive: true, onSelect: () => handleDelete(item) },
-                        ]} />
+                        <div className="flex items-center justify-end gap-1">
+                          {!item.is_dir && (
+                            <button type="button" aria-label={`复制直链 ${item.name}`}
+                              onClick={e => void copyLink(item.id, item.name, 'url', e)}
+                              onDoubleClick={e => e.stopPropagation()}
+                              onMouseEnter={e => showTooltip(e.currentTarget, '复制直链')}
+                              onFocus={e => showTooltip(e.currentTarget, '复制直链')}
+                              onMouseLeave={handleMouseLeaveFileName} onBlur={handleMouseLeaveFileName}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-900">
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          <ItemActions name={item.name} actions={[
+                            ...(!item.is_dir ? [
+                              { label: '下载', icon: Download, href: `/d/${item.id}`, download: true },
+                            ] : []),
+                            { label: '配置 IP 权限', icon: SlidersHorizontal, onSelect: () => openIpModal(item) },
+                            { label: '删除', icon: Trash2, destructive: true, onSelect: () => handleDelete(item) },
+                          ]} />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -681,6 +722,17 @@ export default function HomePage() {
                       : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50 shadow-2xs'
                   }`}
                 >
+                  {!item.is_dir && (
+                    <button type="button" aria-label={`复制直链 ${item.name}`}
+                      onClick={e => void copyLink(item.id, item.name, 'url', e)}
+                      onDoubleClick={e => e.stopPropagation()}
+                      onMouseEnter={e => showTooltip(e.currentTarget, '复制直链')}
+                      onFocus={e => showTooltip(e.currentTarget, '复制直链')}
+                      onMouseLeave={handleMouseLeaveFileName} onBlur={handleMouseLeaveFileName}
+                      className="absolute right-1.5 top-1.5 inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-900">
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <div
                     className="h-16 flex items-center justify-center mb-2"
                     onClick={e => {
@@ -727,7 +779,7 @@ export default function HomePage() {
                     ) : (
                       <div className="flex min-w-0 items-center justify-center gap-1">
                         {isTextFile(item) ? (
-                          <Link to={`/files/${item.id}`} onClick={e => e.stopPropagation()}
+                          <Link to={textFileUrl(item.id)} onClick={e => e.stopPropagation()}
                             className="min-w-0 truncate text-xs font-medium text-zinc-900 hover:underline underline-offset-2"
                             onMouseEnter={e => handleMouseEnterFileName(e, item.name)} onMouseLeave={handleMouseLeaveFileName}>
                             {item.name}
@@ -996,7 +1048,7 @@ export default function HomePage() {
 
       {/* shadcn 风格浮动 Tooltip */}
       {tooltip && (
-        <div
+        <div role="tooltip"
           className={`fixed z-50 pointer-events-none px-2.5 py-1 text-xs text-zinc-50 bg-zinc-900 rounded-md shadow-md border border-zinc-800 -translate-x-1/2 ${
             tooltip.placement === 'top' ? '-translate-y-full mb-1.5' : 'mt-1.5'
           } transition-opacity duration-150 animate-in fade-in-0 zoom-in-95 max-w-xs sm:max-w-md break-all text-center`}

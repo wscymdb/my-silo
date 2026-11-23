@@ -1,9 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useBlocker, useNavigate, useParams } from 'react-router-dom';
+import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Copy, Download, FileText, RefreshCw, Save } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useApp } from '../../providers/AppProvider';
+import { writeClipboard } from '../../lib/clipboard';
 import { readTextResponse, type TextFileData } from './readTextResponse';
 const TextEditor = lazy(() => import('./components/TextEditor'));
 
@@ -11,6 +12,9 @@ const limit = 1024 * 1024;
 
 export default function TextFilePage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const parentFolder = searchParams.get('folder');
+  const libraryUrl = parentFolder ? `/?${new URLSearchParams({ folder: parentFolder })}` : '/';
   const navigate = useNavigate();
   const { token, setToken, showToast } = useApp();
   const [file, setFile] = useState<TextFileData | null>(null);
@@ -116,7 +120,7 @@ export default function TextFilePage() {
   return (
     <div className="flex h-dvh flex-col bg-white text-zinc-950">
       <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-zinc-200 px-4 py-3 md:px-6">
-        <button type="button" title="返回文件库" aria-label="返回文件库" onClick={() => navigate('/')}
+        <button type="button" title="返回文件库" aria-label="返回文件库" onClick={() => navigate(libraryUrl)}
           className="rounded-md p-2 text-zinc-500 hover:bg-zinc-100"><ArrowLeft className="h-4 w-4" /></button>
         <FileText className="h-4 w-4 shrink-0 text-zinc-400" />
         <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">{file?.name || '文本文件'}</h1>
@@ -136,7 +140,7 @@ export default function TextFilePage() {
       {error && <div role="alert" className="flex shrink-0 flex-wrap items-center gap-3 border-b border-red-100 bg-red-50 px-6 py-3 text-xs text-red-700">
         <span className="flex-1">{error}</span>
         {conflict && <button type="button" className="inline-flex items-center gap-1 underline" onClick={() => {
-          navigator.clipboard.writeText(draft).then(() => showToast('已复制你的修改'), () => showToast('复制失败，请在编辑器中手动复制'));
+          writeClipboard(draft).then(() => showToast('已复制你的修改'), () => showToast('复制失败，请在编辑器中手动复制'));
         }}><Copy className="h-3.5 w-3.5" />复制我的修改</button>}
         <button type="button" onClick={reload} disabled={saving} className="inline-flex items-center gap-1 underline"><RefreshCw className="h-3.5 w-3.5" />重新加载</button>
       </div>}
